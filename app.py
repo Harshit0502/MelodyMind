@@ -1,12 +1,18 @@
+# -------------------------------
+# Import Libraries
+# -------------------------------
 import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics.pairwise import cosine_similarity
 import os
-# Load all saved models and data
+from sklearn.metrics.pairwise import cosine_similarity
+
+# -------------------------------
+# Load Models and Data
+# -------------------------------
 @st.cache_resource
 def load_models():
     song_vectorizer = joblib.load('song_vectorizer.pkl')
@@ -18,65 +24,98 @@ def load_models():
     scaler = joblib.load('scaler.pkl') if 'scaler.pkl' in os.listdir() else None
     return song_vectorizer, text_vectors, numeric_vectors, data, tsne_data, kmeans_model, scaler
 
+# Load all artifacts
 song_vectorizer, text_vectors, numeric_vectors, data, tsne_data, kmeans_model, scaler = load_models()
 
-# Set up Streamlit layout
-st.set_page_config(page_title="Song Recommendation App", page_icon="🎵")
-st.title("Song Recommendation App")
-st.text("Enter a song name to get similar song recommendations.")
+# -------------------------------
+# Streamlit Page Setup
+# -------------------------------
+st.set_page_config(page_title="🎵 MelodyMind - Song Recommender", page_icon="🎶")
+st.title("🎵 MelodyMind - Intelligent Song Recommendation App")
+st.markdown("Enter a song name and get intelligent music recommendations based on audio features!")
 
-# User input for song name
-song_name = st.text_input("Song Name:")
+# -------------------------------
+# User Input Section
+# -------------------------------
+song_name = st.text_input("Enter a song name:", "")
 
-# Button to trigger recommendation
+# -------------------------------
+# Recommendation Logic
+# -------------------------------
+def get_similarities_optimized(song_name, data, text_vectors, numeric_vectors):
+    # Find song index
+    song_indices = data.index[data['name'] == song_name].tolist()
+    if not song_indices:
+        raise ValueError(f"Song '{song_name}' not found in the dataset.")
+    song_index = song_indices[0]
+
+    # Calculate similarities
+    text_array1 = text_vectors[song_index]
+    num_array1 = numeric_vectors[song_index]
+
+    text_sim = cosine_similarity([text_array1], text_vectors).flatten()
+    num_sim = cosine_similarity([num_array1], numeric_vectors).flatten()
+
+    total_similarity = text_sim + num_sim
+
+    # Create DataFrame
+    recommendations = pd.DataFrame({
+        'name': data['name'],
+        'similarity': total_similarity,
+        'popularity': data['popularity']
+    })
+
+    return recommendations
+
+# -------------------------------
+# Recommendation Output
+# -------------------------------
 if st.button("Get Recommendations"):
     if song_name:
         try:
-            if song_name in data['name'].values:
-                recommendations = get_similarities_optimized(song_name, data, text_vectors, numeric_vectors)
-                recommendations = recommendations[recommendations['name'] != song_name]  # Exclude input song
-                top_recommendations = recommendations.nlargest(5, 'similarity')  # Get top 5 recommendations
-                
-                st.dataframe(top_recommendations[['name', 'similarity', 'popularity']])
-            else:
-                st.error("Song not found. Here are 5 random popular songs:")
-                random_songs = data.sample(5)
-                st.dataframe(random_songs[['name', 'popularity']])
+            recommendations = get_similarities_optimized(song_name, data, text_vectors, numeric_vectors)
+            recommendations = recommendations[recommendations['name'] != song_name]  # Exclude input song
+            top_recommendations = recommendations.sort_values(by=['similarity', 'popularity'], ascending=[False, False]).head(5)
+            st.success(f"Top 5 Recommendations similar to '{song_name}':")
+            st.dataframe(top_recommendations[['name', 'similarity', 'popularity']])
         except Exception as e:
-            st.error(f"An error occurred: {e}")
+            st.error(f"Error: {e}")
+            st.info("Here are 5 random popular songs you may like:")
+            random_songs = data.sample(5)
+            st.dataframe(random_songs[['name', 'popularity']])
     else:
-        st.warning("Please enter a song name.")
+        st.warning("Please enter a valid song name!")
 
-# Optional t-SNE Visualization
-with st.sidebar.expander("Explore Dataset (t-SNE)", expanded=False):
+# -------------------------------
+# Optional Sidebar t-SNE Visualization
+# -------------------------------
+with st.sidebar.expander("🎨 Explore Dataset (t-SNE Map)", expanded=False):
     if tsne_data is not None:
-        st.write("t-SNE Visualization of Songs")
-        plt.figure(figsize=(10, 6))
-        sns.scatterplot(x=tsne_data[:, 0], y=tsne_data[:, 1], hue=kmeans_model.labels_ if kmeans_model else None, palette='viridis', alpha=0.7)
-        plt.title("t-SNE Visualization of Songs")
+        st.write("Visualizing songs in 2D space colored by clusters.")
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        # Downsampled version for plotting
+        sample_size = min(len(tsne_data), 5000)  # Adjust if needed
+        sample_clusters = data.sample(n=sample_size, random_state=42)['cluster'].values
+        
+        sns.scatterplot(
+            x=tsne_data[:, 0],
+            y=tsne_data[:, 1],
+            hue=sample_clusters,
+            palette='viridis',
+            alpha=0.7,
+            ax=ax
+        )
+        plt.title("t-SNE Visualization of Songs by Clusters")
         plt.xlabel("t-SNE Component 1")
         plt.ylabel("t-SNE Component 2")
-        st.pyplot(plt)
+        plt.legend(title="Cluster", bbox_to_anchor=(1.05, 1), loc='upper left')
+        st.pyplot(fig)
     else:
-        st.write("t-SNE data not available.")
+        st.info("t-SNE data not available.")
 
-# Function to get similar songs
-def get_similarities_optimized(song_name, data, text_vectors, numeric_vectors):
-    # Find the index of the song
-    song_index = data[data['name'] == song_name].index[0]
-    
-    # Calculate cosine similarity
-    similarities = cosine_similarity(text_vectors[song_index].reshape(1, -1), text_vectors).flatten()
-    
-    # Create a DataFrame for recommendations
-    recommendations = pd.DataFrame({
-        'name': data['name'],
-        'similarity': similarities,
-        'popularity': data['popularity']
-    })
-    
-    return recommendations
-
+# -------------------------------
 # Footer
+# -------------------------------
 st.markdown("---")
-st.markdown("Built by Commander")
+st.markdown("Built with ❤️ by Commander.")
