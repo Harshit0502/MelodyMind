@@ -5,7 +5,7 @@ import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics.pairwise import cosine_similarity
-
+import os
 # Load all saved models and data
 @st.cache_resource
 def load_models():
